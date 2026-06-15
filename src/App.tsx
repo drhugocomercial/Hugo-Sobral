@@ -14,7 +14,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import FloatingWhatsApp from './components/FloatingWhatsApp';
 import Footer from './components/Footer';
 import { Procedure, Booking, Professional } from './types';
-import { INITIAL_PROCEDURES, INITIAL_BOOKINGS } from './data';
+import { INITIAL_PROCEDURES } from './data';
 import { Sparkles, Compass, ShieldCheck } from 'lucide-react';
 
 export default function App() {
@@ -29,7 +29,7 @@ export default function App() {
         console.error('Falha ao parsear procedimentos salvos. Revertendo para vazio.', e);
       }
     }
-    return [];
+    return INITIAL_PROCEDURES;
   });
 
   // Load and persist bookings state
@@ -50,6 +50,128 @@ export default function App() {
     return loaded;
   });
 
+  // Load and persist professionals state
+  const [professionals, setProfessionals] = useState<Professional[]>(() => {
+    const saved = localStorage.getItem('hugo_sobral_professionals');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        console.error('Falha ao parsear profissionais. Revertendo para vazio.', e);
+      }
+    }
+    return [];
+  });
+
+  // Sync state data from Server Backend on Mount
+  useEffect(() => {
+    async function fetchServerData() {
+      try {
+        const resBookings = await fetch('/api/bookings');
+        if (resBookings.ok) {
+          const data = await resBookings.json();
+          if (Array.isArray(data)) {
+            setBookings(data);
+            localStorage.setItem('hugo_sobral_bookings', JSON.stringify(data));
+          }
+        }
+      } catch (err) {
+        console.error('[Server Sync] Erro carregando agendamentos:', err);
+      }
+
+      try {
+        const resProfs = await fetch('/api/professionals');
+        if (resProfs.ok) {
+          const data = await resProfs.json();
+          if (Array.isArray(data)) {
+            setProfessionals(data);
+            localStorage.setItem('hugo_sobral_professionals', JSON.stringify(data));
+          }
+        }
+      } catch (err) {
+        console.error('[Server Sync] Erro carregando profissionais:', err);
+      }
+
+      try {
+        const resProcs = await fetch('/api/procedures');
+        if (resProcs.ok) {
+          const data = await resProcs.json();
+          if (Array.isArray(data) && data.length > 0) {
+            setProcedures(data);
+            localStorage.setItem('hugo_sobral_custom_procedures', JSON.stringify(data));
+          }
+        }
+      } catch (err) {
+        console.error('[Server Sync] Erro carregando procedimentos:', err);
+      }
+    }
+
+    fetchServerData();
+  }, []);
+
+  // Poll server for live real-time auto-sync to handle new bookings/confirmations/etc.
+  useEffect(() => {
+    async function pollServerData() {
+      try {
+        const resBookings = await fetch('/api/bookings');
+        if (resBookings.ok) {
+          const data = await resBookings.json();
+          if (Array.isArray(data)) {
+            setBookings((prev) => {
+              if (JSON.stringify(prev) !== JSON.stringify(data)) {
+                return data;
+              }
+              return prev;
+            });
+            localStorage.setItem('hugo_sobral_bookings', JSON.stringify(data));
+          }
+        }
+      } catch (err) {
+        console.error('[Server Poll] Erro carregando agendamentos:', err);
+      }
+
+      try {
+        const resProfs = await fetch('/api/professionals');
+        if (resProfs.ok) {
+          const data = await resProfs.json();
+          if (Array.isArray(data)) {
+            setProfessionals((prev) => {
+              if (JSON.stringify(prev) !== JSON.stringify(data)) {
+                return data;
+              }
+              return prev;
+            });
+            localStorage.setItem('hugo_sobral_professionals', JSON.stringify(data));
+          }
+        }
+      } catch (err) {
+        console.error('[Server Poll] Erro carregando profissionais:', err);
+      }
+
+      try {
+        const resProcs = await fetch('/api/procedures');
+        if (resProcs.ok) {
+          const data = await resProcs.json();
+          if (Array.isArray(data) && data.length > 0) {
+            setProcedures((prev) => {
+              if (JSON.stringify(prev) !== JSON.stringify(data)) {
+                return data;
+              }
+              return prev;
+            });
+            localStorage.setItem('hugo_sobral_custom_procedures', JSON.stringify(data));
+          }
+        }
+      } catch (err) {
+        console.error('[Server Poll] Erro carregando procedimentos:', err);
+      }
+    }
+
+    const intervalId = setInterval(pollServerData, 3000); // Poll every 3 seconds
+    return () => clearInterval(intervalId);
+  }, []);
+
   // Keep state in sync across different tabs/windows
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
@@ -69,36 +191,37 @@ export default function App() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Save procedures to localStorage whenever they change
+  // Save procedures to localStorage & server whenever they change
   const handleUpdateProcedures = (updated: Procedure[]) => {
     setProcedures(updated);
     localStorage.setItem('hugo_sobral_custom_procedures', JSON.stringify(updated));
+    fetch('/api/procedures', {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ procedures: updated })
+    }).catch(err => console.error('[Server Sync] Erro salvando procedimentos:', err));
   };
 
-  // Save bookings to localStorage whenever they change
+  // Save bookings to localStorage & server whenever they change
   const handleUpdateBookings = (updated: Booking[]) => {
     console.log("Agendamento salvo:", updated);
     setBookings(updated);
     localStorage.setItem('hugo_sobral_bookings', JSON.stringify(updated));
+    fetch('/api/bookings', {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookings: updated })
+    }).catch(err => console.error('[Server Sync] Erro salvando agendamentos:', err));
   };
-
-  // Load and persist professionals state
-  const [professionals, setProfessionals] = useState<Professional[]>(() => {
-    const saved = localStorage.getItem('hugo_sobral_professionals');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      } catch (e) {
-        console.error('Falha ao parsear profissionais. Revertendo para vazio.', e);
-      }
-    }
-    return [];
-  });
 
   const handleUpdateProfessionals = (updated: Professional[]) => {
     setProfessionals(updated);
     localStorage.setItem('hugo_sobral_professionals', JSON.stringify(updated));
+    fetch('/api/professionals', {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ professionals: updated })
+    }).catch(err => console.error('[Server Sync] Erro salvando profissionais:', err));
   };
 
   // Modal / Form Management States

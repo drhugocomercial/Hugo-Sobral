@@ -181,11 +181,47 @@ export default function AdminPanel({
     setLastUpdated(new Date());
   }, [bookings]);
 
-  // Manual refresh from localStorage (acts as our core client database)
-  const handleManualRefresh = () => {
+  // Manual refresh from Server Database API (syncing all entities back)
+  const handleManualRefresh = async () => {
     setIsRefreshing(true);
     setRefreshSuccess(false);
-    setTimeout(() => {
+    try {
+      // 1. Fetch bookings
+      const resBookings = await fetch('/api/bookings');
+      if (resBookings.ok) {
+        const data = await resBookings.json();
+        if (Array.isArray(data)) {
+          onUpdateBookings(data);
+          localStorage.setItem('hugo_sobral_bookings', JSON.stringify(data));
+        }
+      }
+
+      // 2. Fetch professionals
+      const resProfs = await fetch('/api/professionals');
+      if (resProfs.ok) {
+        const data = await resProfs.json();
+        if (Array.isArray(data)) {
+          onUpdateProfessionals(data);
+          localStorage.setItem('hugo_sobral_professionals', JSON.stringify(data));
+        }
+      }
+
+      // 3. Fetch procedures
+      const resProcs = await fetch('/api/procedures');
+      if (resProcs.ok) {
+        const data = await resProcs.json();
+        if (Array.isArray(data) && data.length > 0) {
+          onUpdateProcedures(data);
+          localStorage.setItem('hugo_sobral_custom_procedures', JSON.stringify(data));
+        }
+      }
+
+      setLastUpdated(new Date());
+      setRefreshSuccess(true);
+      setTimeout(() => setRefreshSuccess(false), 3000);
+    } catch (err) {
+      console.error('Erro ao recarregar dados do servidor:', err);
+      // Fallback
       try {
         const saved = localStorage.getItem('hugo_sobral_bookings');
         if (saved) {
@@ -194,15 +230,12 @@ export default function AdminPanel({
             onUpdateBookings(parsed);
           }
         }
-        setLastUpdated(new Date());
-        setRefreshSuccess(true);
-        setTimeout(() => setRefreshSuccess(false), 3000);
-      } catch (err) {
-        console.error('Erro ao recarregar agendamentos:', err);
-      } finally {
-        setIsRefreshing(false);
+      } catch (e) {
+        console.error('Erro de fallback do localStorage:', e);
       }
-    }, 700);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   // "Configurações de Acesso" input states
