@@ -30,18 +30,6 @@ export default function HomeHero({ onViewServices, onBookClick }: HomeHeroProps)
         
         {/* TEXT COLUMN */}
         <div className="lg:col-span-7 space-y-8 select-none">
-          <motion.div
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1 }}
-            className="inline-flex items-center gap-2 px-3 py-1.5 border border-gold-300 bg-gold-50/50 rounded-full"
-          >
-            <Sparkles className="w-4.5 h-4.5 text-gold-500 fill-gold-100" />
-            <span className="font-sans text-[10px] uppercase tracking-[0.25em] text-gold-700 font-semibold">
-              Especialista em Harmonia & Rejuvenescimento
-            </span>
-          </motion.div>
-
           <div className="space-y-4">
             <motion.h1
               initial={{ opacity: 0, y: 20 }}
