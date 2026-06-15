@@ -1,0 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Space+Grotesk:wght@300;400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Playfair Display", Georgia, serif;
+  --font-sans: "Montserrat", system-ui, -apple-system, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  
+  --color-gold-50: #fbf9f4;
+  --color-gold-100: #f5f0e4;
+  --color-gold-200: #e6d9be;
+  --color-gold-300: #d5be94;
+  --color-gold-400: #C5A059;
+  --color-gold-500: #b18c46;
+  --color-gold-600: #937134;
+  --color-gold-700: #745624;
+  --color-gold-800: #553e1a;
+  --color-gold-900: #36260f;
+  
+  --color-luxury-black: #1A1A1A;
+  --color-luxury-charcoal: #262626;
+  --color-luxury-gray: #5A5A5A;
+  --color-luxury-cream: #FDFCF9;
+  --color-luxury-offwhite: #F7F5EE;
+  --color-luxury-white: #FFFFFF;
+  
+  --shadow-luxury: 0 4px 30px rgba(197, 160, 89, 0.04);
+  --shadow-luxury-hover: 0 20px 40px rgba(197, 160, 89, 0.08);
+}
+
+@layer base {
+  body {
+    background-color: var(--color-luxury-cream);
+    color: var(--color-luxury-black);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
+  }
+}
+
+/* Custom premium scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-luxury-cream);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-gold-200);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-gold-300);
+}
