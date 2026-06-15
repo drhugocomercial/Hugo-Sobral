@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 
 console.log("Servidor iniciando...");
 console.log("PORT:", process.env.PORT);
@@ -32,9 +31,8 @@ async function startServer() {
       if (!accessToken || !phoneNumberId) {
         return res.status(503).json({
           success: false,
-          error: "Integração do WhatsApp não configurada no servidor. Chaves ausentes nas variáveis de ambiente.",
           isConfigured: false,
-          instructions: "Para ativar, configure 'WHATSAPP_ACCESS_TOKEN' e 'WHATSAPP_PHONE_NUMBER_ID' nas variáveis de ambiente do sistema."
+          error: "Integração do WhatsApp não configurada."
         });
       }
 
@@ -98,10 +96,15 @@ async function startServer() {
 
   // Serve static files / Vite middleware
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
+
     const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
+      server: {
+        middlewareMode: true
+      },
+      appType: "spa"
     });
+
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
