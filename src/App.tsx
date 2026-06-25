@@ -9,7 +9,7 @@ import HomeHero from './components/HomeHero';
 import CatalogSection from './components/CatalogSection';
 import ProcedureModal from './components/ProcedureModal';
 import BookingWizard from './components/BookingWizard';
-import AdminPanel from './components/AdminPanel';
+import AdminPanel, { sha256Sync } from './components/AdminPanel';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import FloatingWhatsApp from './components/FloatingWhatsApp';
 import Footer from './components/Footer';
@@ -17,8 +17,19 @@ import { Procedure, Booking, Professional } from './types';
 import { INITIAL_PROCEDURES } from './data';
 import { Sparkles, Compass, ShieldCheck } from 'lucide-react';
 
+import { db } from './lib/firebase';
+import { 
+  collection, 
+  doc, 
+  onSnapshot, 
+  setDoc, 
+  writeBatch, 
+  getDocs,
+  getDoc
+} from 'firebase/firestore';
+
 export default function App() {
-  // Load and persist procedures state
+  // Real-time synced states from Firestore with LocalStorage static fallback for instant initial load
   const [procedures, setProcedures] = useState<Procedure[]>(() => {
     const saved = localStorage.getItem('hugo_sobral_custom_procedures');
     if (saved) {
@@ -26,31 +37,25 @@ export default function App() {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) return parsed;
       } catch (e) {
-        console.error('Falha ao parsear procedimentos salvos. Revertendo para vazio.', e);
+        console.error('Falha ao parsear procedimentos salvos.', e);
       }
     }
     return INITIAL_PROCEDURES;
   });
 
-  // Load and persist bookings state
   const [bookings, setBookings] = useState<Booking[]>(() => {
     const saved = localStorage.getItem('hugo_sobral_bookings');
-    let loaded: Booking[] = [];
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          loaded = parsed;
-        }
+        if (Array.isArray(parsed)) return parsed;
       } catch (e) {
-        console.error('Falha ao parsear agendamentos salvos. Revertendo para vazio.', e);
+        console.error('Falha ao parsear agendamentos salvos.', e);
       }
     }
-    console.log("Agendamentos encontrados:", loaded);
-    return loaded;
+    return [];
   });
 
-  // Load and persist professionals state
   const [professionals, setProfessionals] = useState<Professional[]>(() => {
     const saved = localStorage.getItem('hugo_sobral_professionals');
     if (saved) {
@@ -58,121 +63,228 @@ export default function App() {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) return parsed;
       } catch (e) {
-        console.error('Falha ao parsear profissionais. Revertendo para vazio.', e);
+        console.error('Falha ao parsear profissionais.', e);
       }
     }
     return [];
   });
 
-  // Sync state data from Server Backend on Mount
-  useEffect(() => {
-    async function fetchServerData() {
-      try {
-        const resBookings = await fetch('/api/bookings');
-        if (resBookings.ok) {
-          const data = await resBookings.json();
-          if (Array.isArray(data)) {
-            setBookings(data);
-            localStorage.setItem('hugo_sobral_bookings', JSON.stringify(data));
+  // Seeding and Migrating functions to upload existing REST JSON/localStorage data into Firestore if Firestore is empty
+  const migrateExistingDataToFirestore = async () => {
+    try {
+      console.log("[Migration] Iniciando verificação de dados para migração para o Firestore...");
+
+      // 1. Migrate Procedures if collection is empty
+      const proceduresSnap = await getDocs(collection(db, 'procedures'));
+      if (proceduresSnap.empty) {
+        console.log("[Migration] Coleção de 'procedures' vazia no Firestore. Migrando dados...");
+        let existingProcs = INITIAL_PROCEDURES;
+        try {
+          const res = await fetch('/api/procedures');
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+              existingProcs = data;
+              console.log("[Migration] Procedimentos existentes encontrados no servidor.");
+            }
           }
+        } catch (e) {
+          console.error("[Migration] Erro ao carregar procedimentos para migração:", e);
         }
-      } catch (err) {
-        console.error('[Server Sync] Erro carregando agendamentos:', err);
+        
+        const batch = writeBatch(db);
+        existingProcs.forEach(proc => {
+          batch.set(doc(db, 'procedures', proc.id), proc);
+        });
+        await batch.commit();
+        console.log(`[Migration] Sincronizados com sucesso ${existingProcs.length} procedimentos.`);
       }
 
-      try {
-        const resProfs = await fetch('/api/professionals');
-        if (resProfs.ok) {
-          const data = await resProfs.json();
-          if (Array.isArray(data)) {
-            setProfessionals(data);
-            localStorage.setItem('hugo_sobral_professionals', JSON.stringify(data));
+      // 2. Migrate Professionals if collection is empty
+      const professionalsSnap = await getDocs(collection(db, 'professionals'));
+      if (professionalsSnap.empty) {
+        console.log("[Migration] Coleção de 'professionals' vazia no Firestore. Migrando dados...");
+        let existingProfs: Professional[] = [];
+        try {
+          const res = await fetch('/api/professionals');
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+              existingProfs = data;
+              console.log("[Migration] Profissionais existentes encontrados no servidor.");
+            }
+          }
+        } catch (e) {}
+
+        if (existingProfs.length === 0) {
+          const saved = localStorage.getItem('hugo_sobral_professionals');
+          if (saved) {
+            try {
+              const parsed = JSON.parse(saved);
+              if (Array.isArray(parsed) && parsed.length > 0) existingProfs = parsed;
+            } catch (e) {}
           }
         }
-      } catch (err) {
-        console.error('[Server Sync] Erro carregando profissionais:', err);
+
+        if (existingProfs.length > 0) {
+          const batch = writeBatch(db);
+          existingProfs.forEach(prof => {
+            batch.set(doc(db, 'professionals', prof.id), prof);
+          });
+          await batch.commit();
+          console.log(`[Migration] Sincronizados com sucesso ${existingProfs.length} profissionais.`);
+        }
       }
 
-      try {
-        const resProcs = await fetch('/api/procedures');
-        if (resProcs.ok) {
-          const data = await resProcs.json();
-          if (Array.isArray(data) && data.length > 0) {
-            setProcedures(data);
-            localStorage.setItem('hugo_sobral_custom_procedures', JSON.stringify(data));
+      // 3. Migrate Bookings if collection is empty
+      const bookingsSnap = await getDocs(collection(db, 'bookings'));
+      if (bookingsSnap.empty) {
+        console.log("[Migration] Coleção de 'bookings' vazia no Firestore. Migrando dados...");
+        let existingBookings: Booking[] = [];
+        try {
+          const res = await fetch('/api/bookings');
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+              existingBookings = data;
+              console.log("[Migration] Agendamentos existentes encontrados no servidor.");
+            }
+          }
+        } catch (e) {}
+
+        if (existingBookings.length === 0) {
+          const saved = localStorage.getItem('hugo_sobral_bookings');
+          if (saved) {
+            try {
+              const parsed = JSON.parse(saved);
+              if (Array.isArray(parsed) && parsed.length > 0) existingBookings = parsed;
+            } catch (e) {}
           }
         }
-      } catch (err) {
-        console.error('[Server Sync] Erro carregando procedimentos:', err);
+
+        if (existingBookings.length > 0) {
+          const batch = writeBatch(db);
+          existingBookings.forEach(b => {
+            batch.set(doc(db, 'bookings', b.id), b);
+          });
+          await batch.commit();
+          console.log(`[Migration] Sincronizados com sucesso ${existingBookings.length} agendamentos.`);
+        }
       }
+
+      // 4. Migrate settings/admin credentials if doesn't exist
+      const adminRef = doc(db, 'settings', 'admin');
+      const adminSnap = await getDoc(adminRef);
+      if (!adminSnap.exists()) {
+        const storedUser = localStorage.getItem('hugo_admin_username_db') || 'drhugo.beauty';
+        const storedHash = localStorage.getItem('hugo_admin_password_hash_db') || sha256Sync('drhugo123');
+        const storedEmail = localStorage.getItem('hugo_admin_email_db') || 'drhugocomercial@gmail.com';
+        let storedHistory = ["Sistema instalado: Credenciais administrativas padrão geradas em 13/06/2026."];
+        const h = localStorage.getItem('hugo_admin_credentials_history_db');
+        if (h) {
+          try {
+            storedHistory = JSON.parse(h);
+          } catch (e) {}
+        }
+
+        await setDoc(adminRef, {
+          username: storedUser,
+          password_hash: storedHash,
+          email: storedEmail,
+          history: storedHistory
+        });
+        console.log("[Migration] Configurações administrativas migradas com sucesso.");
+      }
+    } catch (err) {
+      console.error("[Migration] Erro geral durante migração de dados:", err);
     }
+  };
 
-    fetchServerData();
+  // Real-time subscription to Firestore database
+  useEffect(() => {
+    // Fire off non-blocking data migration
+    migrateExistingDataToFirestore();
+
+    // 1. Listen to Bookings Collection
+    const unsubBookings = onSnapshot(collection(db, 'bookings'), (snapshot) => {
+      const list: Booking[] = [];
+      snapshot.forEach(docSnap => {
+        list.push(docSnap.data() as Booking);
+      });
+      // Sort ascending based on creation date
+      list.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      
+      setBookings(prev => {
+        if (JSON.stringify(prev) !== JSON.stringify(list)) {
+          localStorage.setItem('hugo_sobral_bookings', JSON.stringify(list));
+          return list;
+        }
+        return prev;
+      });
+    }, (error) => {
+      console.error("[Firestore Errors] Erro ao sincronizar agendamentos:", error);
+    });
+
+    // 2. Listen to Professionals Collection
+    const unsubProfessionals = onSnapshot(collection(db, 'professionals'), (snapshot) => {
+      const list: Professional[] = [];
+      snapshot.forEach(docSnap => {
+        list.push(docSnap.data() as Professional);
+      });
+      // Sort by UI ordering sequence
+      list.sort((a, b) => (a.order || 0) - (b.order || 0));
+      
+      setProfessionals(prev => {
+        if (JSON.stringify(prev) !== JSON.stringify(list)) {
+          localStorage.setItem('hugo_sobral_professionals', JSON.stringify(list));
+          return list;
+        }
+        return prev;
+      });
+    }, (error) => {
+      console.error("[Firestore Errors] Erro ao sincronizar profissionais:", error);
+    });
+
+    // 3. Listen to Procedures Collection
+    const unsubProcedures = onSnapshot(collection(db, 'procedures'), (snapshot) => {
+      const list: Procedure[] = [];
+      snapshot.forEach(docSnap => {
+        list.push(docSnap.data() as Procedure);
+      });
+      
+      setProcedures(prev => {
+        if (JSON.stringify(prev) !== JSON.stringify(list)) {
+          localStorage.setItem('hugo_sobral_custom_procedures', JSON.stringify(list));
+          return list;
+        }
+        return prev;
+      });
+    }, (error) => {
+      console.error("[Firestore Errors] Erro ao sincronizar procedimentos:", error);
+    });
+
+    // 4. Listen to Admin Settings
+    const unsubSettings = onSnapshot(doc(db, 'settings', 'admin'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        localStorage.setItem('hugo_admin_username_db', data.username || 'drhugo.beauty');
+        localStorage.setItem('hugo_admin_password_hash_db', data.password_hash || sha256Sync('drhugo123'));
+        localStorage.setItem('hugo_admin_email_db', data.email || 'drhugocomercial@gmail.com');
+        localStorage.setItem('hugo_admin_credentials_history_db', JSON.stringify(data.history || []));
+      }
+    }, (error) => {
+      console.error("[Firestore Errors] Erro ao sincronizar configurações:", error);
+    });
+
+    return () => {
+      unsubBookings();
+      unsubProfessionals();
+      unsubProcedures();
+      unsubSettings();
+    };
   }, []);
 
-  // Poll server for live real-time auto-sync to handle new bookings/confirmations/etc.
-  useEffect(() => {
-    async function pollServerData() {
-      try {
-        const resBookings = await fetch('/api/bookings');
-        if (resBookings.ok) {
-          const data = await resBookings.json();
-          if (Array.isArray(data)) {
-            setBookings((prev) => {
-              if (JSON.stringify(prev) !== JSON.stringify(data)) {
-                return data;
-              }
-              return prev;
-            });
-            localStorage.setItem('hugo_sobral_bookings', JSON.stringify(data));
-          }
-        }
-      } catch (err) {
-        console.error('[Server Poll] Erro carregando agendamentos:', err);
-      }
-
-      try {
-        const resProfs = await fetch('/api/professionals');
-        if (resProfs.ok) {
-          const data = await resProfs.json();
-          if (Array.isArray(data)) {
-            setProfessionals((prev) => {
-              if (JSON.stringify(prev) !== JSON.stringify(data)) {
-                return data;
-              }
-              return prev;
-            });
-            localStorage.setItem('hugo_sobral_professionals', JSON.stringify(data));
-          }
-        }
-      } catch (err) {
-        console.error('[Server Poll] Erro carregando profissionais:', err);
-      }
-
-      try {
-        const resProcs = await fetch('/api/procedures');
-        if (resProcs.ok) {
-          const data = await resProcs.json();
-          if (Array.isArray(data) && data.length > 0) {
-            setProcedures((prev) => {
-              if (JSON.stringify(prev) !== JSON.stringify(data)) {
-                return data;
-              }
-              return prev;
-            });
-            localStorage.setItem('hugo_sobral_custom_procedures', JSON.stringify(data));
-          }
-        }
-      } catch (err) {
-        console.error('[Server Poll] Erro carregando procedimentos:', err);
-      }
-    }
-
-    const intervalId = setInterval(pollServerData, 3000); // Poll every 3 seconds
-    return () => clearInterval(intervalId);
-  }, []);
-
-  // Keep state in sync across different tabs/windows
+  // Multi-tab local storage fallback sync (redundant but helpful)
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'hugo_sobral_bookings' && e.newValue) {
@@ -180,7 +292,6 @@ export default function App() {
           const parsed = JSON.parse(e.newValue);
           if (Array.isArray(parsed)) {
             setBookings(parsed);
-            console.log("Agendamentos encontrados (Sync):", parsed);
           }
         } catch (err) {
           console.error(err);
@@ -191,37 +302,109 @@ export default function App() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Save procedures to localStorage & server whenever they change
-  const handleUpdateProcedures = (updated: Procedure[]) => {
+  // Helper to deep clean undefined fields to prevent Firestore serialization errors
+  const cleanUndefined = (obj: any): any => {
+    if (obj === null || typeof obj !== 'object') {
+      return obj;
+    }
+    const cleaned: any = Array.isArray(obj) ? [] : {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        const value = obj[key];
+        if (value !== undefined) {
+          cleaned[key] = cleanUndefined(value);
+        }
+      }
+    }
+    return cleaned;
+  };
+
+  // Unified writer synchronization logic helper
+  const syncArrayToFirestore = async <T extends { id: string }>(
+    colName: string, 
+    incomingArray: T[]
+  ) => {
+    try {
+      const q = collection(db, colName);
+      const snapshot = await getDocs(q);
+      const existingIds = new Set(snapshot.docs.map(doc => doc.id));
+      const incomingIds = new Set(incomingArray.map(item => item.id));
+      
+      const batch = writeBatch(db);
+      
+      // Upsert modified or added items
+      incomingArray.forEach(item => {
+        const docRef = doc(db, colName, item.id);
+        batch.set(docRef, cleanUndefined(item));
+      });
+      
+      // Calculate deletions
+      const idsToDelete: string[] = [];
+      existingIds.forEach(id => {
+        if (!incomingIds.has(id)) {
+          idsToDelete.push(id);
+        }
+      });
+
+      const docsToDeleteCount = idsToDelete.length;
+
+      // 1. Bloqueio de segurança: Se incomingArray.length === 0, não executar batch.delete()
+      if (incomingArray.length === 0) {
+        console.warn(`[Firestore Sync Warning] Bloqueio de segurança ativado: incomingArray está vazio para a coleção '${colName}'. Abortando qualquer operação de exclusão em massa.`);
+      } else if (docsToDeleteCount > 0) {
+        // 3. Log obrigatório: Registrar quantos documentos serão deletados antes do commit
+        console.log(`[Firestore Sync Log] ATENÇÃO: Preparando a exclusão de ${docsToDeleteCount} documentos na coleção '${colName}' antes do commit. IDs das exclusões pendentes:`, idsToDelete);
+
+        // 4. Confirmação: Qualquer exclusão em lote deve exigir confirmação explícita
+        const confirmed = window.confirm(
+          `ALERTA DE SEGURANÇA - EXCLUSÃO EM LOTE:\n\n` +
+          `A sincronização com o estado local identificou que ${docsToDeleteCount} documento(s) serão DELETADOS permanentemente da coleção '${colName}' no Firestore:\n` +
+          `IDs afetados: ${idsToDelete.join(', ')}\n\n` +
+          `Deseja realmente prosseguir com estas exclusões no Firestore?`
+        );
+
+        if (!confirmed) {
+          console.warn(`[Firestore Sync Warning] Exclusão em lote de ${docsToDeleteCount} documentos cancelada pelo usuário. Operação de exclusão abortada de forma segura.`);
+          return;
+        }
+
+        // Add deletes if confirmed
+        idsToDelete.forEach(id => {
+          const docRef = doc(db, colName, id);
+          batch.delete(docRef);
+        });
+      }
+      
+      await batch.commit();
+      console.log(`[Firestore Sync] Coleção '${colName}' sincronizada com sucesso. (Adicionados/Modificados: ${incomingArray.length}, Deletados: ${incomingArray.length === 0 ? 0 : docsToDeleteCount})`);
+    } catch (err) {
+      console.error(`[Firestore Sync] Erro ao sincronizar coleção '${colName}':`, err);
+    }
+  };
+
+  // State handlers to bubble modifications instantly into Firestore
+  const handleUpdateProcedures = (updated: Procedure[], skipFirestoreSync: boolean = false) => {
     setProcedures(updated);
     localStorage.setItem('hugo_sobral_custom_procedures', JSON.stringify(updated));
-    fetch('/api/procedures', {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ procedures: updated })
-    }).catch(err => console.error('[Server Sync] Erro salvando procedimentos:', err));
+    if (!skipFirestoreSync) {
+      syncArrayToFirestore('procedures', updated);
+    }
   };
 
-  // Save bookings to localStorage & server whenever they change
-  const handleUpdateBookings = (updated: Booking[]) => {
-    console.log("Agendamento salvo:", updated);
+  const handleUpdateBookings = (updated: Booking[], skipFirestoreSync: boolean = false) => {
     setBookings(updated);
     localStorage.setItem('hugo_sobral_bookings', JSON.stringify(updated));
-    fetch('/api/bookings', {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bookings: updated })
-    }).catch(err => console.error('[Server Sync] Erro salvando agendamentos:', err));
+    if (!skipFirestoreSync) {
+      syncArrayToFirestore('bookings', updated);
+    }
   };
 
-  const handleUpdateProfessionals = (updated: Professional[]) => {
+  const handleUpdateProfessionals = (updated: Professional[], skipFirestoreSync: boolean = false) => {
     setProfessionals(updated);
     localStorage.setItem('hugo_sobral_professionals', JSON.stringify(updated));
-    fetch('/api/professionals', {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ professionals: updated })
-    }).catch(err => console.error('[Server Sync] Erro salvando profissionais:', err));
+    if (!skipFirestoreSync) {
+      syncArrayToFirestore('professionals', updated);
+    }
   };
 
   // Modal / Form Management States
@@ -230,9 +413,9 @@ export default function App() {
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('inicio');
-  const [selectedCategory, setSelectedCategory] = useState<'ALL' | 'EXPERIÊNCIAS FACIAIS' | 'CUIDADOS CORPORAIS' | 'PROCEDIMENTOS DE TRATAMENTO'>('ALL');
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
 
-  const handleCategorySelect = (category: 'EXPERIÊNCIAS FACIAIS' | 'CUIDADOS CORPORAIS' | 'PROCEDIMENTOS DE TRATAMENTO') => {
+  const handleCategorySelect = (category: string) => {
     setSelectedCategory(category);
     const catalogEl = document.getElementById('catalogo');
     if (catalogEl) {
@@ -269,7 +452,7 @@ export default function App() {
       const hash = window.location.hash;
       if (!hash) return;
 
-      let categoryToSelect: 'EXPERIÊNCIAS FACIAIS' | 'CUIDADOS CORPORAIS' | 'PROCEDIMENTOS DE TRATAMENTO' | null = null;
+      let categoryToSelect: string | null = null;
       if (hash === '#experiencias-faciais') {
         categoryToSelect = 'EXPERIÊNCIAS FACIAIS';
       } else if (hash === '#cuidados-corporais') {

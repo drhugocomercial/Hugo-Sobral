@@ -7,7 +7,7 @@ export interface Procedure {
   id: string;
   name: string;
   description: string;
-  category: 'EXPERIÊNCIAS FACIAIS' | 'CUIDADOS CORPORAIS' | 'PROCEDIMENTOS DE TRATAMENTO';
+  category: string;
   price: number;
   indication: string;
   imageUrl: string;

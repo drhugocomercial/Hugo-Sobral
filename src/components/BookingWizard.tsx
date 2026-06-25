@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar as CalendarIcon, Clock, Sparkles, Check, ChevronLeft, ChevronRight, User, Phone, Briefcase, FileText, CheckCircle2 } from 'lucide-react';
 import { Procedure, Booking, Professional, BookingMessageLog } from '../types';
 import { AVAILABLE_HOURS } from '../data';
+import { getDirectGoogleDriveUrl } from '../utils';
 
 interface BookingWizardProps {
   procedures: Procedure[];
@@ -446,7 +447,7 @@ export default function BookingWizard({
                                      <div className="w-7 h-7 rounded-full bg-stone-100 border border-gold-200 overflow-hidden shrink-0 flex items-center justify-center">
                                        {prof.imageUrl ? (
                                          <img 
-                                           src={prof.imageUrl} 
+                                           src={getDirectGoogleDriveUrl(prof.imageUrl)} 
                                            alt={prof.name} 
                                            className="w-full h-full object-cover" 
                                            referrerPolicy="no-referrer"

@@ -15,6 +15,7 @@ if (!existsSync(DATA_DIR)) {
 const BOOKINGS_FILE = path.join(DATA_DIR, "bookings.json");
 const PROFESSIONALS_FILE = path.join(DATA_DIR, "professionals.json");
 const PROCEDURES_FILE = path.join(DATA_DIR, "procedures.json");
+const WHATSAPP_CONFIG_FILE = path.join(DATA_DIR, "whatsapp_config.json");
 
 // Safe helper to read from JSON file
 async function readJsonFile<T>(filePath: string, defaultValue: T): Promise<T> {
@@ -100,6 +101,40 @@ async function startServer() {
     }
   });
 
+  // API Routes: Retrieve and update dynamic WhatsApp API settings
+  app.get("/api/whatsapp/config", async (req, res) => {
+    try {
+      const config = await readJsonFile<any>(WHATSAPP_CONFIG_FILE, {
+        accessToken: process.env.WHATSAPP_ACCESS_TOKEN || "",
+        phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || "",
+      });
+      res.json(config);
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/whatsapp/config", async (req, res) => {
+    try {
+      const { accessToken, phoneNumberId } = req.body;
+      const cleanToken = accessToken?.trim() || "";
+      const cleanPhoneId = phoneNumberId?.trim() || "";
+
+      await writeJsonFile(WHATSAPP_CONFIG_FILE, {
+        accessToken: cleanToken,
+        phoneNumberId: cleanPhoneId,
+      });
+
+      // Update in-memory environment variables for instant updates
+      process.env.WHATSAPP_ACCESS_TOKEN = cleanToken;
+      process.env.WHATSAPP_PHONE_NUMBER_ID = cleanPhoneId;
+
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
   // API Route: Send secure server-side WhatsApp message
   app.post("/api/whatsapp/send", async (req, res) => {
     try {
@@ -112,16 +147,22 @@ async function startServer() {
         });
       }
 
-      // Read credentials from environment
-      const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
-      const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+      // Read credentials from environment or fall back to local config file
+      let accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+      let phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+      if (!accessToken || !phoneNumberId) {
+        const localConfig = await readJsonFile<any>(WHATSAPP_CONFIG_FILE, {});
+        if (localConfig.accessToken) accessToken = localConfig.accessToken;
+        if (localConfig.phoneNumberId) phoneNumberId = localConfig.phoneNumberId;
+      }
 
       // Graceful checking of missing credentials
       if (!accessToken || !phoneNumberId) {
         return res.status(503).json({
           success: false,
           isConfigured: false,
-          error: "Integração do WhatsApp não configurada."
+          error: "Integração do WhatsApp não configurada. Por favor, cadastre as credenciais no Painel Administrativo."
         });
       }
 

@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global validator for document IDs to prevent Injection and Denial of Wallet
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 100 && id.matches('^[a-zA-Z0-9_\\-\\.]+$');
+    }
+
+    match /procedures/{procedureId} {
+      allow read: if true;
+      allow write: if isValidId(procedureId);
+    }
+
+    match /professionals/{professionalId} {
+      allow read: if true;
+      allow write: if isValidId(professionalId);
+    }
+
+    match /bookings/{bookingId} {
+      allow read: if true;
+      allow write: if isValidId(bookingId);
+    }
+
+    match /settings/{settingsId} {
+      allow read: if true;
+      allow write: if isValidId(settingsId);
+    }
+  }
+}

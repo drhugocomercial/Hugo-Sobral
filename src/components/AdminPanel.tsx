@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Lock, LogOut, Plus, Edit2, CheckCircle2, XCircle, RefreshCw, Trash2, Save, X, Eye, EyeOff,
@@ -12,14 +12,15 @@ import {
 } from 'lucide-react';
 import { Procedure, Booking, BookingMessageLog, Professional } from '../types';
 import { AVAILABLE_HOURS } from '../data';
+import { getDirectGoogleDriveUrl } from '../utils';
 
 interface AdminPanelProps {
   procedures: Procedure[];
-  onUpdateProcedures: (newProcedures: Procedure[]) => void;
+  onUpdateProcedures: (newProcedures: Procedure[], skipFirestoreSync?: boolean) => void;
   bookings: Booking[];
-  onUpdateBookings: (newBookings: Booking[]) => void;
+  onUpdateBookings: (newBookings: Booking[], skipFirestoreSync?: boolean) => void;
   professionals: Professional[];
-  onUpdateProfessionals: (newProfessionals: Professional[]) => void;
+  onUpdateProfessionals: (newProfessionals: Professional[], skipFirestoreSync?: boolean) => void;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -169,74 +170,65 @@ export default function AdminPanel({
   const [recoveryConfirmPass, setRecoveryConfirmPass] = useState('');
 
   // Tab views
-  const [activeTab, setActiveTab] = useState<'agendamentos' | 'catalogo' | 'acesso'>('agendamentos');
+  const [activeTab, setActiveTab] = useState<'agendamentos' | 'catalogo' | 'profissionais' | 'acesso' | 'whatsapp'>('agendamentos');
 
-  // Refresh & Sync states for administrative bookings
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [refreshSuccess, setRefreshSuccess] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<Date>(() => new Date());
+  // WhatsApp Configuration states
+  const [whatsappAccessToken, setWhatsappAccessToken] = useState('');
+  const [whatsappPhoneNumberId, setWhatsappPhoneNumberId] = useState('');
+  const [whatsappConfigLoading, setWhatsappConfigLoading] = useState(false);
+  const [whatsappConfigSaving, setWhatsappConfigSaving] = useState(false);
+  const [whatsappConfigFeedback, setWhatsappConfigFeedback] = useState<{ type: 'success' | 'crit', msg: string } | null>(null);
 
-  // Automatically update last sync time when bookings prop changes (real-time sync)
-  useEffect(() => {
-    setLastUpdated(new Date());
-  }, [bookings]);
-
-  // Manual refresh from Server Database API (syncing all entities back)
-  const handleManualRefresh = async () => {
-    setIsRefreshing(true);
-    setRefreshSuccess(false);
+  const loadWhatsappConfig = async () => {
+    setWhatsappConfigLoading(true);
+    setWhatsappConfigFeedback(null);
     try {
-      // 1. Fetch bookings
-      const resBookings = await fetch('/api/bookings');
-      if (resBookings.ok) {
-        const data = await resBookings.json();
-        if (Array.isArray(data)) {
-          onUpdateBookings(data);
-          localStorage.setItem('hugo_sobral_bookings', JSON.stringify(data));
-        }
+      const res = await fetch('/api/whatsapp/config');
+      if (res.ok) {
+        const data = await res.json();
+        setWhatsappAccessToken(data.accessToken || '');
+        setWhatsappPhoneNumberId(data.phoneNumberId || '');
+      } else {
+        setWhatsappConfigFeedback({ type: 'crit', msg: 'Erro ao carregar configurações do WhatsApp.' });
       }
-
-      // 2. Fetch professionals
-      const resProfs = await fetch('/api/professionals');
-      if (resProfs.ok) {
-        const data = await resProfs.json();
-        if (Array.isArray(data)) {
-          onUpdateProfessionals(data);
-          localStorage.setItem('hugo_sobral_professionals', JSON.stringify(data));
-        }
-      }
-
-      // 3. Fetch procedures
-      const resProcs = await fetch('/api/procedures');
-      if (resProcs.ok) {
-        const data = await resProcs.json();
-        if (Array.isArray(data) && data.length > 0) {
-          onUpdateProcedures(data);
-          localStorage.setItem('hugo_sobral_custom_procedures', JSON.stringify(data));
-        }
-      }
-
-      setLastUpdated(new Date());
-      setRefreshSuccess(true);
-      setTimeout(() => setRefreshSuccess(false), 3000);
-    } catch (err) {
-      console.error('Erro ao recarregar dados do servidor:', err);
-      // Fallback
-      try {
-        const saved = localStorage.getItem('hugo_sobral_bookings');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            onUpdateBookings(parsed);
-          }
-        }
-      } catch (e) {
-        console.error('Erro de fallback do localStorage:', e);
-      }
+    } catch (err: any) {
+      setWhatsappConfigFeedback({ type: 'crit', msg: 'Erro de conexão ao carregar configurações.' });
     } finally {
-      setIsRefreshing(false);
+      setWhatsappConfigLoading(false);
     }
   };
+
+  const handleSaveWhatsappConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setWhatsappConfigSaving(true);
+    setWhatsappConfigFeedback(null);
+    try {
+      const res = await fetch('/api/whatsapp/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken: whatsappAccessToken,
+          phoneNumberId: whatsappPhoneNumberId,
+        }),
+      });
+      if (res.ok) {
+        setWhatsappConfigFeedback({ type: 'success', msg: 'Configurações do WhatsApp salvas com sucesso!' });
+      } else {
+        const data = await res.json();
+        setWhatsappConfigFeedback({ type: 'crit', msg: data.error || 'Erro ao salvar configurações.' });
+      }
+    } catch (err: any) {
+      setWhatsappConfigFeedback({ type: 'crit', msg: 'Erro de conexão ao salvar configurações.' });
+    } finally {
+      setWhatsappConfigSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'whatsapp') {
+      loadWhatsappConfig();
+    }
+  }, [activeTab]);
 
   // "Configurações de Acesso" input states
   const [accessNewUser, setAccessNewUser] = useState('');
@@ -270,11 +262,13 @@ export default function AdminPanel({
 
   // Form states (used for both creating and editing procedures)
   const [formName, setFormName] = useState('');
-  const [formCategory, setFormCategory] = useState<'EXPERIÊNCIAS FACIAIS' | 'CUIDADOS CORPORAIS' | 'PROCEDIMENTOS DE TRATAMENTO'>('EXPERIÊNCIAS FACIAIS');
+  const [formCategory, setFormCategory] = useState<string>('EXPERIÊNCIAS FACIAIS');
   const [formPrice, setFormPrice] = useState(0);
   const [formDescription, setFormDescription] = useState('');
   const [formIndication, setFormIndication] = useState('');
   const [formImageUrl, setFormImageUrl] = useState('');
+  const [showCustomCategoryInput, setShowCustomCategoryInput] = useState(false);
+  const [customCategoryName, setCustomCategoryName] = useState('');
 
   // Booking action states (Reschedule and Cancel Modals)
   const [reschedulingBooking, setReschedulingBooking] = useState<Booking | null>(null);
@@ -352,11 +346,12 @@ export default function AdminPanel({
       alert('Por favor, preencha o nome e o cargo do profissional.');
       return;
     }
+    const resolvedImgUrl = getDirectGoogleDriveUrl(profFormImageUrl.trim());
     const newProf: Professional = {
       id: `prof-${Date.now()}`,
       name: profFormName.trim(),
       role: profFormRole.trim(),
-      imageUrl: profFormImageUrl.trim() || undefined,
+      imageUrl: resolvedImgUrl || undefined,
       active: profFormActive,
       order: profFormOrder || 1,
     };
@@ -383,13 +378,14 @@ export default function AdminPanel({
       alert('Por favor, preencha o nome e o cargo do profissional.');
       return;
     }
+    const resolvedImgUrl = getDirectGoogleDriveUrl(profFormImageUrl.trim());
     const updated = professionals.map(p => {
       if (p.id === editingProf.id) {
         return {
           ...p,
           name: profFormName.trim(),
           role: profFormRole.trim(),
-          imageUrl: profFormImageUrl.trim() || undefined,
+          imageUrl: resolvedImgUrl || undefined,
           active: profFormActive,
           order: profFormOrder || 1,
         };
@@ -532,6 +528,22 @@ export default function AdminPanel({
     localStorage.setItem('hugo_admin_credentials_history_db', JSON.stringify(historyLogs));
     setAccessHistory(historyLogs);
 
+    // Save to Firestore
+    try {
+      import('../lib/firebase').then(({ db }) => {
+        import('firebase/firestore').then(({ doc, setDoc }) => {
+          setDoc(doc(db, 'settings', 'admin'), {
+            username: localStorage.getItem('hugo_admin_username_db') || 'drhugo.beauty',
+            password_hash: newPassHash,
+            email: localStorage.getItem('hugo_admin_email_db') || 'drhugocomercial@gmail.com',
+            history: historyLogs
+          }).catch(err => console.error("Erro escrevendo settings no firestore:", err));
+        });
+      });
+    } catch (err) {
+      console.error(err);
+    }
+
     setRecoveryMessage('Acesso restaurado com sucesso! Redirecionando para o login...');
     setTimeout(() => {
       setShowRecoveryFlow(false);
@@ -598,6 +610,22 @@ export default function AdminPanel({
     localStorage.setItem('hugo_admin_credentials_history_db', JSON.stringify(historyLogs));
     setAccessHistory(historyLogs);
 
+    // Save to Firestore
+    try {
+      import('../lib/firebase').then(({ db }) => {
+        import('firebase/firestore').then(({ doc, setDoc }) => {
+          setDoc(doc(db, 'settings', 'admin'), {
+            username: finalUser,
+            password_hash: finalPassHash,
+            email: localStorage.getItem('hugo_admin_email_db') || 'drhugocomercial@gmail.com',
+            history: historyLogs
+          }).catch(err => console.error("Erro escrevendo settings no firestore:", err));
+        });
+      });
+    } catch (err) {
+      console.error(err);
+    }
+
     // Clear inputs
     setAccessNewUser('');
     setAccessCurrentPass('');
@@ -621,6 +649,21 @@ export default function AdminPanel({
     }
   };
 
+  const existingCategories = useMemo(() => {
+    const defaultCats = [
+      'EXPERIÊNCIAS FACIAIS',
+      'CUIDADOS CORPORAIS',
+      'PROCEDIMENTOS DE TRATAMENTO'
+    ];
+    const cats = new Set<string>(defaultCats);
+    procedures.forEach((p) => {
+      if (p.category) {
+        cats.add(p.category.trim().toUpperCase());
+      }
+    });
+    return Array.from(cats);
+  }, [procedures]);
+
   // ----- PROCEDURE CRUD HANDLERS -----
 
   const handleToggleActive = (id: string) => {
@@ -640,6 +683,8 @@ export default function AdminPanel({
     setFormDescription(proc.description);
     setFormIndication(proc.indication);
     setFormImageUrl(proc.imageUrl);
+    setShowCustomCategoryInput(false);
+    setCustomCategoryName('');
   };
 
   const handleStartCreate = () => {
@@ -651,6 +696,8 @@ export default function AdminPanel({
     setFormDescription('');
     setFormIndication('');
     setFormImageUrl('https://images.unsplash.com/photo-1512290923902-8a9f81dc236c?w=600&auto=format&fit=crop&q=80');
+    setShowCustomCategoryInput(false);
+    setCustomCategoryName('');
   };
 
   const handleCancelForm = () => {
@@ -672,15 +719,26 @@ export default function AdminPanel({
       return;
     }
 
+    const finalCategory = showCustomCategoryInput
+      ? customCategoryName.trim().toUpperCase()
+      : formCategory;
+
+    if (showCustomCategoryInput && !customCategoryName.trim()) {
+      alert('Por favor, preencha o nome da nova categoria.');
+      return;
+    }
+
+    const resolvedImgUrl = getDirectGoogleDriveUrl(formImageUrl.trim());
+
     if (isCreating) {
       const newProc: Procedure = {
         id: `custom-${Date.now()}`,
         name: formName.trim(),
-        category: formCategory,
+        category: finalCategory,
         price: formPrice,
         description: formDescription.trim(),
         indication: formIndication.trim() || 'Indicado para tratamentos estéticos premium.',
-        imageUrl: formImageUrl.trim() || 'https://images.unsplash.com/photo-1512290923902-8a9f81dc236c?w=600&auto=format&fit=crop&q=80',
+        imageUrl: resolvedImgUrl || 'https://images.unsplash.com/photo-1512290923902-8a9f81dc236c?w=600&auto=format&fit=crop&q=80',
         active: true,
       };
       onUpdateProcedures([newProc, ...procedures]);
@@ -690,11 +748,11 @@ export default function AdminPanel({
           return {
             ...p,
             name: formName.trim(),
-            category: formCategory,
+            category: finalCategory,
             price: formPrice,
             description: formDescription.trim(),
             indication: formIndication.trim(),
-            imageUrl: formImageUrl.trim(),
+            imageUrl: resolvedImgUrl,
           };
         }
         return p;
@@ -1520,6 +1578,17 @@ export default function AdminPanel({
                     <span>Configurações de Acesso</span>
                   </button>
                   <button
+                    onClick={() => setActiveTab('whatsapp')}
+                    className={`px-4 py-2 text-[10px] uppercase font-sans tracking-widest transition-all cursor-pointer flex items-center gap-1.5 font-bold border ${
+                      activeTab === 'whatsapp'
+                        ? 'bg-luxury-black text-white border-luxury-black'
+                        : 'bg-transparent text-luxury-gray border-gold-200/60 hover:text-luxury-black hover:border-gold-400'
+                    }`}
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 text-green-600" />
+                    <span>API WhatsApp</span>
+                  </button>
+                  <button
                     onClick={handleLogout}
                     className="p-2 border border-red-250 text-red-650 hover:bg-red-50 text-[10px] font-sans uppercase flex items-center justify-center gap-1 cursor-pointer font-bold shrink-0"
                     title="Sair"
@@ -1758,53 +1827,29 @@ export default function AdminPanel({
 
                   {/* ACTIVE RESERVATIONS ARCHIVE */}
                   <div className="space-y-3.5">
-                    {/* Sincronização em Tempo Real & Carga Manual */}
+                    {/* Sincronização em Tempo Real (Apenas Visual) */}
                     <div className="flex flex-wrap items-center justify-between gap-3 bg-luxury-white border border-gold-250/60 p-3 rounded-md shadow-2xs">
                       <div className="flex items-center gap-3">
-                        <button
-                          onClick={handleManualRefresh}
-                          disabled={isRefreshing}
-                          className={`p-2 border border-gold-200 text-gold-700 bg-gold-50/20 hover:bg-gold-50 hover:border-gold-350 rounded-sm cursor-pointer disabled:opacity-50 transition-all flex items-center justify-center`}
-                          title="Forçar recarga do banco de dados (Sincronização de segurança)"
-                        >
-                          <RefreshCw className={`w-4 h-4 text-gold-600 ${isRefreshing ? 'animate-spin' : ''}`} />
-                        </button>
+                        <div className="flex items-center justify-center p-2.5 border border-gold-100 bg-gold-50/10 rounded-sm">
+                          <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
+                        </div>
                         <div className="flex flex-col">
-                          <span className="font-sans text-[9px] uppercase tracking-wider text-gold-600/90 font-bold flex items-center gap-1.5">
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                            Conexão em Tempo Real Ativa
+                          <span className="font-sans text-[10px] uppercase tracking-wider text-gold-600 font-bold flex items-center gap-1.5">
+                            Sincronização em Tempo Real Ativa
                           </span>
                           <span className="font-serif text-xs text-luxury-black font-semibold mt-0.5">
-                            {isRefreshing ? (
-                              <span className="text-gold-600 animate-pulse">Buscando do banco de dados...</span>
-                            ) : (
-                              <span>Última atualização: <span className="font-sans text-xs">{lastUpdated.toLocaleTimeString('pt-BR')}</span></span>
-                            )}
+                            Espelho de dados conectado de forma segura com o Firestore.
                           </span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-3">
                         <div className="text-right flex flex-col">
-                          <span className="font-sans text-[9px] uppercase tracking-wider text-luxury-gray">Total Carregado</span>
+                          <span className="font-sans text-[9px] uppercase tracking-wider text-luxury-gray">Total Ativo</span>
                           <span className="font-serif text-xs text-luxury-black font-bold mt-0.5">
                             {bookings.length} {bookings.length === 1 ? 'agendamento' : 'agendamentos'}
                           </span>
                         </div>
-
-                        <AnimatePresence>
-                          {refreshSuccess && (
-                            <motion.div
-                              initial={{ opacity: 0, x: 10 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              exit={{ opacity: 0 }}
-                              className="flex items-center gap-1 bg-green-50 border border-green-200 px-3 py-1.5 rounded-sm text-xs text-green-700 font-sans font-medium shadow-2xs"
-                            >
-                              <Check className="w-3.5 h-3.5 text-green-600 font-bold" />
-                              <span>Banco atualizado!</span>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
                       </div>
                     </div>
 
@@ -2257,15 +2302,52 @@ export default function AdminPanel({
                           {/* Category */}
                           <div className="space-y-1 col-span-2 sm:col-span-1">
                             <label className="font-sans text-[9px] uppercase tracking-wider text-luxury-gray font-semibold block">Categoria *</label>
-                            <select
-                              value={formCategory}
-                              onChange={(e) => setFormCategory(e.target.value as any)}
-                              className="w-full text-xs font-sans p-2.5 bg-luxury-cream border border-gold-100 focus:outline-none focus:border-gold-300 rounded-none h-[42px]"
-                            >
-                              <option value="EXPERIÊNCIAS FACIAIS">FACIAIS</option>
-                              <option value="CUIDADOS CORPORAIS">CORPORAIS</option>
-                              <option value="PROCEDIMENTOS DE TRATAMENTO">TRATAMENTOS</option>
-                            </select>
+                            {!showCustomCategoryInput ? (
+                              <div className="flex gap-2">
+                                <select
+                                  value={formCategory}
+                                  onChange={(e) => {
+                                    if (e.target.value === '__NEW_CATEGORY__') {
+                                      setShowCustomCategoryInput(true);
+                                      setCustomCategoryName('');
+                                    } else {
+                                      setFormCategory(e.target.value);
+                                    }
+                                  }}
+                                  className="w-full text-xs font-sans p-2.5 bg-luxury-cream border border-gold-100 focus:outline-none focus:border-gold-300 rounded-none h-[42px]"
+                                >
+                                  {existingCategories.map((cat) => (
+                                    <option key={cat} value={cat}>
+                                      {cat === 'EXPERIÊNCIAS FACIAIS' ? 'FACIAIS' : cat === 'CUIDADOS CORPORAIS' ? 'CORPORAIS' : cat === 'PROCEDIMENTOS DE TRATAMENTO' ? 'TRATAMENTOS' : cat}
+                                    </option>
+                                  ))}
+                                  <option value="__NEW_CATEGORY__" className="text-gold-600 font-bold">+ Criar Nova Categoria...</option>
+                                </select>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-1.5">
+                                <div className="flex gap-2">
+                                  <input
+                                    type="text"
+                                    placeholder="Ex: TERAPIAS INTEGRATIVAS"
+                                    value={customCategoryName}
+                                    onChange={(e) => setCustomCategoryName(e.target.value)}
+                                    className="flex-1 text-xs font-sans p-2.5 bg-luxury-cream border border-gold-100 focus:outline-none focus:border-gold-300 h-[42px]"
+                                    required
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setShowCustomCategoryInput(false);
+                                      setFormCategory('EXPERIÊNCIAS FACIAIS');
+                                    }}
+                                    className="px-3 border border-stone-200 text-stone-600 hover:bg-stone-50 text-[10px] uppercase font-sans tracking-wider"
+                                  >
+                                    Voltar
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           {/* Price */}
@@ -2353,7 +2435,7 @@ export default function AdminPanel({
                         >
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-zinc-50 border border-gold-100 overflow-hidden shrink-0">
-                              <img src={proc.imageUrl} alt="" className="w-full h-full object-cover font-sans text-[8px]" />
+                              <img src={getDirectGoogleDriveUrl(proc.imageUrl)} alt="" className="w-full h-full object-cover font-sans text-[8px]" />
                             </div>
                             <div className="space-y-0.5">
                               <h5 className="font-serif text-xs font-bold text-luxury-black line-clamp-1">{proc.name}</h5>
@@ -2575,7 +2657,7 @@ export default function AdminPanel({
                               <div className="w-14 h-14 rounded-full border border-gold-150 bg-luxury-cream overflow-hidden shrink-0 flex items-center justify-center relative">
                                 {prof.imageUrl ? (
                                   <img 
-                                    src={prof.imageUrl} 
+                                    src={getDirectGoogleDriveUrl(prof.imageUrl)} 
                                     alt={prof.name} 
                                     referrerPolicy="no-referrer"
                                     className="w-full h-full object-cover" 
@@ -2828,6 +2910,172 @@ export default function AdminPanel({
                       >
                         Limpar Base de Dados
                       </button>
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+              {/* VIEW: CADASTRO API DO WHATSAPP */}
+              {activeTab === 'whatsapp' && (
+                <div className="space-y-6 animate-fade-in text-left">
+                  
+                  {/* WHATSAPP API CARD */}
+                  <div className="bg-luxury-white border border-gold-150 p-6 shadow-luxury relative">
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-green-400 via-emerald-600 to-green-400" />
+                    
+                    <div className="border-b pb-3 border-gold-100 flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <p className="font-sans text-[10px] uppercase text-emerald-700 tracking-wider font-semibold">Comunicação e Notificações</p>
+                        <h4 className="font-serif text-sm font-semibold text-luxury-black">Cadastro da API do WhatsApp Cloud (Meta)</h4>
+                      </div>
+                      <MessageSquare className="w-5 h-5 text-emerald-600 shrink-0" />
+                    </div>
+
+                    {whatsappConfigLoading ? (
+                      <div className="py-12 flex flex-col items-center justify-center gap-2">
+                        <RefreshCw className="w-6 h-6 text-emerald-600 animate-spin" />
+                        <span className="font-sans text-xs text-luxury-gray">Carregando configurações...</span>
+                      </div>
+                    ) : (
+                      <form onSubmit={handleSaveWhatsappConfig} className="mt-6 space-y-5">
+                        
+                        {whatsappConfigFeedback && (
+                          <div className={`p-4 text-xs font-sans border-l-2 select-none ${
+                            whatsappConfigFeedback.type === 'success'
+                              ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
+                              : 'bg-rose-50 border-rose-500 text-rose-850'
+                          }`}>
+                            <div className="flex items-start gap-2.5">
+                              {whatsappConfigFeedback.type === 'success' ? (
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                              ) : (
+                                <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                              )}
+                              <div>
+                                <span className="font-bold block shrink-0">{whatsappConfigFeedback.type === 'success' ? 'Sucesso' : 'Erro'}</span>
+                                <span className="block mt-0.5 leading-relaxed">{whatsappConfigFeedback.msg}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="space-y-4">
+                          {/* Access Token Field */}
+                          <div className="space-y-1.5">
+                            <label className="font-sans text-[10px] uppercase tracking-wider text-luxury-gray font-semibold block">
+                              Token de Acesso Temporário ou Permanente (Access Token) *
+                            </label>
+                            <textarea
+                              value={whatsappAccessToken}
+                              onChange={(e) => setWhatsappAccessToken(e.target.value)}
+                              placeholder="Ex: EAAGB3..."
+                              rows={4}
+                              className="w-full text-xs font-sans p-2.5 bg-luxury-cream border border-gold-100 focus:outline-none focus:border-gold-300 rounded-none resize-y font-mono"
+                              required
+                            />
+                            <p className="font-sans text-[10px] text-luxury-gray leading-normal">
+                              O token de acesso gerado no painel da Meta para Desenvolvedores. Para testes, você pode usar um token temporário de 24 horas.
+                            </p>
+                          </div>
+
+                          {/* Phone Number ID Field */}
+                          <div className="space-y-1.5">
+                            <label className="font-sans text-[10px] uppercase tracking-wider text-luxury-gray font-semibold block">
+                              ID do Número de Telefone (Phone Number ID) *
+                            </label>
+                            <input
+                              type="text"
+                              value={whatsappPhoneNumberId}
+                              onChange={(e) => setWhatsappPhoneNumberId(e.target.value)}
+                              placeholder="Ex: 105829849202930"
+                              className="w-full text-xs font-sans p-2.5 bg-luxury-cream border border-gold-100 focus:outline-none focus:border-gold-300 rounded-none h-[42px] font-mono"
+                              required
+                            />
+                            <p className="font-sans text-[10px] text-luxury-gray leading-normal">
+                              O identificador numérico exclusivo correspondente ao número de telefone do remetente na API da Meta.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* INFO BOX */}
+                        <div className="p-4 bg-amber-50/50 border border-amber-200/50 space-y-2 text-amber-900">
+                          <h5 className="font-sans text-[10px] uppercase tracking-wider font-bold">Como funciona a Integração?</h5>
+                          <p className="font-sans text-xs leading-relaxed">
+                            A Meta (Facebook) fornece a **WhatsApp Business Cloud API**, permitindo que o sistema envie mensagens transacionais de confirmação e reagendamento de forma silenciosa e em segundo plano. As mensagens são enviadas diretamente dos servidores da Meta para o celular do cliente.
+                          </p>
+                          <p className="font-sans text-xs leading-relaxed font-bold">
+                            Importante: Se estas credenciais não forem cadastradas, o sistema disparará mensagens abrindo um redirecionamento ao WhatsApp Web como backup manual, sem interromper o funcionamento.
+                          </p>
+                        </div>
+
+                        <div className="flex justify-end pt-2">
+                          <button
+                            type="submit"
+                            disabled={whatsappConfigSaving}
+                            className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white uppercase text-[10px] font-sans font-bold tracking-widest transition-all cursor-pointer shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            {whatsappConfigSaving ? (
+                              <>
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                                <span>Salvando...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Save className="w-3.5 h-3.5" />
+                                <span>Salvar Credenciais</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                      </form>
+                    )}
+                  </div>
+
+                  {/* HOW TO GUIDE CARD */}
+                  <div className="bg-luxury-white border border-gold-150 p-6 shadow-luxury relative">
+                    <div className="border-b pb-3 border-gold-100 flex items-center justify-between">
+                      <h4 className="font-serif text-sm font-semibold text-luxury-black">Guia Passo a Passo de Configuração</h4>
+                      <CheckCircle2 className="w-5 h-5 text-gold-500 shrink-0" />
+                    </div>
+                    
+                    <div className="mt-4 space-y-4 font-sans text-xs text-luxury-gray leading-relaxed">
+                      <div className="flex gap-3">
+                        <div className="w-5 h-5 bg-gold-50 text-gold-700 rounded-full border border-gold-200 flex items-center justify-center font-bold font-serif shrink-0 text-[10px]">
+                          1
+                        </div>
+                        <div>
+                          <strong className="text-luxury-black font-semibold">Crie uma conta de Desenvolvedor:</strong> Acesse o portal <a href="https://developers.facebook.com" target="_blank" rel="noopener noreferrer" className="text-gold-600 underline font-bold">Meta for Developers</a> e faça login com sua conta do Facebook.
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3">
+                        <div className="w-5 h-5 bg-gold-50 text-gold-700 rounded-full border border-gold-200 flex items-center justify-center font-bold font-serif shrink-0 text-[10px]">
+                          2
+                        </div>
+                        <div>
+                          <strong className="text-luxury-black font-semibold">Crie um Aplicativo:</strong> Clique em "Meus Aplicativos", depois "Criar aplicativo" e selecione o tipo de aplicativo "Outro" ou "Negócios", configurando o nome comercial.
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3">
+                        <div className="w-5 h-5 bg-gold-50 text-gold-700 rounded-full border border-gold-200 flex items-center justify-center font-bold font-serif shrink-0 text-[10px]">
+                          3
+                        </div>
+                        <div>
+                          <strong className="text-luxury-black font-semibold">Adicione o produto WhatsApp:</strong> Role a lista de produtos até "WhatsApp" e clique em "Configurar". Isso vinculará ou criará uma conta do Gerenciador de Negócios (Meta Business Suite).
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3">
+                        <div className="w-5 h-5 bg-gold-50 text-gold-700 rounded-full border border-gold-200 flex items-center justify-center font-bold font-serif shrink-0 text-[10px]">
+                          4
+                        </div>
+                        <div>
+                          <strong className="text-luxury-black font-semibold">Copie os campos necessários:</strong> No menu lateral esquerdo do app, vá em **WhatsApp &gt; Início rápido**. Lá você encontrará o seu **Token de acesso temporário** e o **Identificador do número de telefone (Phone Number ID)**. Copie-os e insira nos campos acima para habilitar o envio instantâneo direto.
+                        </div>
+                      </div>
                     </div>
                   </div>
 

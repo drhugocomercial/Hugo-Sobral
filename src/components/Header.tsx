@@ -10,8 +10,8 @@ interface HeaderProps {
   onAdminClick: () => void;
   onBookClick: () => void;
   activeSection: string;
-  selectedCategory: 'ALL' | 'EXPERIÊNCIAS FACIAIS' | 'CUIDADOS CORPORAIS' | 'PROCEDIMENTOS DE TRATAMENTO';
-  onCategorySelect: (category: 'EXPERIÊNCIAS FACIAIS' | 'CUIDADOS CORPORAIS' | 'PROCEDIMENTOS DE TRATAMENTO') => void;
+  selectedCategory: string;
+  onCategorySelect: (category: string) => void;
 }
 
 export default function Header({

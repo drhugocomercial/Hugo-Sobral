@@ -7,6 +7,7 @@ import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, MessageSquare, Calendar, ShieldCheck, Sparkles, AlertCircle } from 'lucide-react';
 import { Procedure } from '../types';
+import { getDirectGoogleDriveUrl } from '../utils';
 
 interface ProcedureModalProps {
   procedure: Procedure | null;
@@ -67,7 +68,7 @@ export default function ProcedureModal({ procedure, onClose, onBook }: Procedure
           {/* LEFT: IMAGE COLUMN with premium cover look */}
           <div className="w-full md:w-1/2 relative bg-gold-50 min-h-[250px] md:min-h-full">
             <img
-              src={procedure.imageUrl}
+              src={getDirectGoogleDriveUrl(procedure.imageUrl)}
               alt={procedure.name}
               className="w-full h-full object-cover"
               referrerPolicy="no-referrer"

@@ -7,8 +7,9 @@ import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Eye, Sparkles, Filter, Info, ChevronRight, HelpCircle } from 'lucide-react';
 import { Procedure } from '../types';
+import { getDirectGoogleDriveUrl } from '../utils';
 
-type CategoryFilter = 'ALL' | 'EXPERIÊNCIAS FACIAIS' | 'CUIDADOS CORPORAIS' | 'PROCEDIMENTOS DE TRATAMENTO';
+type CategoryFilter = string;
 
 interface CatalogSectionProps {
   procedures: Procedure[];
@@ -27,12 +28,49 @@ export default function CatalogSection({
 }: CatalogSectionProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
-  const categories: { label: string; value: CategoryFilter; desc: string }[] = [
-    { label: 'Exibir Todos', value: 'ALL', desc: 'A coleção completa de rituais de bem-estar.' },
-    { label: 'Experiências Faciais', value: 'EXPERIÊNCIAS FACIAIS', desc: 'Revitalização cutânea, hidratação profunda e assepsia fotônica.' },
-    { label: 'Cuidados Corporais', value: 'CUIDADOS CORPORAIS', desc: 'Rituais manuais e liberação para reestabelecer o bem-estar físico.' },
-    { label: 'Procedimentos de Tratamento', value: 'PROCEDIMENTOS DE TRATAMENTO', desc: 'Protocolos de renovação intensiva por peeling ecológico ou dermo-indução.' },
-  ];
+  const categories = useMemo(() => {
+    // Get unique categories from active procedures
+    const uniqueCats = Array.from(
+      new Set(
+        procedures
+          .filter((p) => p.active)
+          .map((p) => p.category)
+      )
+    ).filter(Boolean);
+
+    const baseCategories = [
+      { label: 'Exibir Todos', value: 'ALL', desc: 'A coleção completa de rituais de bem-estar.' },
+    ];
+
+    // Map unique categories to dynamic menu items with descriptions
+    const dynamicCategories = uniqueCats.map((cat) => {
+      let desc = 'Serviços personalizados de alta gama para o seu bem-estar.';
+      if (cat === 'EXPERIÊNCIAS FACIAIS') {
+        desc = 'Revitalização cutânea, hidratação profunda e assepsia fotônica.';
+      } else if (cat === 'CUIDADOS CORPORAIS') {
+        desc = 'Rituais manuais e liberação para reestabelecer o bem-estar físico.';
+      } else if (cat === 'PROCEDIMENTOS DE TRATAMENTO') {
+        desc = 'Protocolos de renovação intensiva por peeling ecológico ou dermo-indução.';
+      }
+
+      let label = cat;
+      if (cat === 'EXPERIÊNCIAS FACIAIS') label = 'Experiências Faciais';
+      else if (cat === 'CUIDADOS CORPORAIS') label = 'Cuidados Corporais';
+      else if (cat === 'PROCEDIMENTOS DE TRATAMENTO') label = 'Procedimentos de Tratamento';
+      else {
+        // Beautify any user category (e.g. UPPERCASE to Capital Case)
+        label = cat.charAt(0).toUpperCase() + cat.slice(1).toLowerCase();
+      }
+
+      return {
+        label,
+        value: cat,
+        desc,
+      };
+    });
+
+    return [...baseCategories, ...dynamicCategories];
+  }, [procedures]);
 
   // Filters procedures by search query, selected category, and active status
   const filteredProcedures = useMemo(() => {
@@ -173,7 +211,7 @@ export default function CatalogSection({
                       {/* Image Frame with Overlay */}
                       <div className="relative aspect-16/10 bg-gold-50 overflow-hidden border border-gold-100">
                         <img
-                          src={proc.imageUrl}
+                          src={getDirectGoogleDriveUrl(proc.imageUrl)}
                           alt={proc.name}
                           className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-700"
                           referrerPolicy="no-referrer"
@@ -185,7 +223,7 @@ export default function CatalogSection({
                         </div>
                         {/* Quick category identifier */}
                         <div className="absolute bottom-3 left-3.5 bg-luxury-black/75 px-2 py-0.5 font-sans text-[8px] font-semibold text-luxury-white uppercase tracking-widest">
-                          {proc.category === 'EXPERIÊNCIAS FACIAIS' ? 'FACIAL' : proc.category === 'CUIDADOS CORPORAIS' ? 'CORPORAL' : 'TRATAMENTO'}
+                          {proc.category === 'EXPERIÊNCIAS FACIAIS' ? 'FACIAL' : proc.category === 'CUIDADOS CORPORAIS' ? 'CORPORAL' : proc.category === 'PROCEDIMENTOS DE TRATAMENTO' ? 'TRATAMENTO' : proc.category.split(' ')[0]}
                         </div>
                       </div>
 

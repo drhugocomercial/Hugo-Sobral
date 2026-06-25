@@ -9,7 +9,7 @@ import { Instagram, MessageCircle, MapPin, Compass, ShieldCheck, Clock } from 'l
 interface FooterProps {
   onAdminClick: () => void;
   onBookClick: () => void;
-  onCategorySelect?: (category: 'EXPERIÊNCIAS FACIAIS' | 'CUIDADOS CORPORAIS' | 'PROCEDIMENTOS DE TRATAMENTO') => void;
+  onCategorySelect?: (category: string) => void;
 }
 
 export default function Footer({ onAdminClick, onBookClick, onCategorySelect }: FooterProps) {

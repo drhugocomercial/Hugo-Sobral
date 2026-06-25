@@ -1,0 +1,122 @@
+{
+  "entities": {
+    "Procedure": {
+      "title": "Procedure",
+      "description": "A procedure/service package offered by the spa",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "category": {
+          "type": "string",
+          "enum": ["EXPERIÊNCIAS FACIAIS", "CUIDADOS CORPORAIS", "PROCEDIMENTOS DE TRATAMENTO"]
+        },
+        "price": { "type": "number" },
+        "indication": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "name", "description", "category", "price", "indication", "imageUrl", "active"]
+    },
+    "Professional": {
+      "title": "Professional",
+      "description": "A spa/esthetics professional staff member",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "active": { "type": "boolean" },
+        "order": { "type": "number" }
+      },
+      "required": ["id", "name", "role", "active", "order"]
+    },
+    "BookingMessageLog": {
+      "title": "BookingMessageLog",
+      "description": "A WhatsApp notification message log nested in a Booking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sentAt": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["Criação", "Confirmação", "Reagendamento", "Cancelamento", "Conclusão", "Lembrete"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Sucesso", "Falha"]
+        },
+        "content": { "type": "string" },
+        "deliveryStatus": {
+          "type": "string",
+          "enum": ["Enviado", "Entregue", "Falhou", "Pendente"]
+        },
+        "errorMessage": { "type": "string" }
+      },
+      "required": ["id", "sentAt", "type", "status"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "A client treatment reservation slot",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "procedureId": { "type": "string" },
+        "procedureName": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "professional": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["Pendente", "Confirmado", "Cancelado", "Concluído"]
+        },
+        "cancelledReason": { "type": "string" },
+        "completedAt": { "type": "string" },
+        "observations": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "history": {
+          "type": "array",
+          "items": { "type": "object", "$ref": "BookingMessageLog" }
+        }
+      },
+      "required": ["id", "clientName", "clientPhone", "procedureId", "procedureName", "date", "time", "professional", "status", "createdAt", "history"]
+    },
+    "AdminSettings": {
+      "title": "AdminSettings",
+      "description": "Administrative credential and access configuration",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "password_hash": { "type": "string" },
+        "email": { "type": "string" },
+        "history": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["username", "password_hash", "email", "history"]
+    }
+  },
+  "firestore": {
+    "procedures": {
+      "schema": "Procedure",
+      "description": "Collection of treatment and spa services"
+    },
+    "professionals": {
+      "schema": "Professional",
+      "description": "Collection of spa professional team members"
+    },
+    "bookings": {
+      "schema": "Booking",
+      "description": "Collection of booked treatment reservations"
+    },
+    "settings": {
+      "schema": "AdminSettings",
+      "description": "System configuration with security and logging"
+    }
+  }
+}
